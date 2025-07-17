@@ -16,7 +16,6 @@ from tenacity import (
 from .. import LOGGER, aria2_options
 from .config_manager import Config
 
-
 def wrap_with_retry(obj, max_retries=3):
     for attr_name in dir(obj):
         if attr_name.startswith("_"):
@@ -34,7 +33,6 @@ def wrap_with_retry(obj, max_retries=3):
             wrapped = retry_policy(attr)
             setattr(obj, attr_name, wrapped)
     return obj
-
 
 class TorrentManager:
     aria2 = None
@@ -83,20 +81,25 @@ class TorrentManager:
     @classmethod
     async def remove_all(cls):
         await cls.pause_all()
-        await gather(
-            cls.qbittorrent.torrents.delete("all", False),
-            cls.aria2.purgeDownloadResult(),
-        )
-        downloads = []
-        results = await gather(cls.aria2.tellActive(), cls.aria2.tellWaiting(0, 1000))
-        for res in results:
-            downloads.extend(res)
+
         tasks = []
-        tasks.extend(
-            cls.aria2.forceRemove(download.get("gid")) for download in downloads
-        )
-        with suppress(Exception):
-            await gather(*tasks)
+        if cls.qbittorrent:
+            tasks.append(cls.qbittorrent.torrents.delete("all", False))
+        if cls.aria2:
+            tasks.append(cls.aria2.purgeDownloadResult())
+
+        await gather(*tasks)
+
+        if cls.aria2:
+            downloads = []
+            results = await gather(cls.aria2.tellActive(), cls.aria2.tellWaiting(0, 1000))
+            for res in results:
+                downloads.extend(res)
+            tasks = [
+                cls.aria2.forceRemove(download.get("gid")) for download in downloads
+            ]
+            with suppress(Exception):
+                await gather(*tasks)
 
     @classmethod
     async def overall_speed(cls):
@@ -113,10 +116,13 @@ class TorrentManager:
 
     @classmethod
     async def pause_all(cls):
-        pause_tasks = [cls.aria2.forcePauseAll()]
+        pause_tasks = []
+        if cls.aria2:
+            pause_tasks.append(cls.aria2.forcePauseAll())
         if cls.qbittorrent:
             pause_tasks.append(cls.qbittorrent.torrents.stop("all"))
-        await gather(*pause_tasks)
+        if pause_tasks:
+            await gather(*pause_tasks)
 
     @classmethod
     async def change_aria2_option(cls, key, value):
@@ -138,7 +144,6 @@ class TorrentManager:
             await cls.aria2.changeGlobalOption({key: value})
             aria2_options[key] = value
 
-
 def aria2_name(download_info):
     if "bittorrent" in download_info and download_info["bittorrent"].get("info"):
         return download_info["bittorrent"]["info"]["name"]
@@ -153,7 +158,6 @@ def aria2_name(download_info):
             return ""
     else:
         return ""
-
 
 def is_metadata(download_info):
     return any(
