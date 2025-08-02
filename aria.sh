@@ -1,5 +1,4 @@
 tracker_list=$(curl -Ns https://ngosang.github.io/trackerslist/trackers_all_http.txt | awk '$0' | tr '\n\n' ',')
-
 aria2c --allow-overwrite=true --auto-file-renaming=true \
        --bt-enable-lpd=false \
        --enable-dht=false \
